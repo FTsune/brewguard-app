@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import Image from "next/image"
 
 import { useState, useRef, useCallback } from "react"
 import { Upload, ImageIcon, AlertCircle, Leaf, CheckCircle2, Loader2, FileWarning } from "lucide-react"
@@ -10,13 +11,21 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+type DetectionResult = {
+  name: string
+  confidence: number
+  area: number
+  description: string
+  color: string
+}
+
 export function MainContent() {
   const [isDragging, setIsDragging] = useState(false)
   const [originalImage, setOriginalImage] = useState<string | null>(null)
   const [processedImage, setProcessedImage] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [detectionResults, setDetectionResults] = useState<any[] | null>(null)
+  const [detectionResults, setDetectionResults] = useState<DetectionResult[] | null>(null)
   const [processingProgress, setProcessingProgress] = useState(0)
   const [apiError, setApiError] = useState<string | null>(null)
 
@@ -27,19 +36,16 @@ export function MainContent() {
     setUploadError(null)
     setApiError(null)
 
-    // Validate file type
     if (!file.type.match("image/jpeg") && !file.type.match("image/png")) {
       setUploadError("Please upload a JPG or PNG image")
       return
     }
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
       setUploadError("File size exceeds 10MB limit")
       return
     }
 
-    // Create object URL for the image
     const reader = new FileReader()
     reader.onload = (e) => {
       const imageUrl = e.target?.result as string
@@ -47,19 +53,16 @@ export function MainContent() {
       setProcessedImage(null)
       setDetectionResults(null)
 
-      // Process the image with the Flask backend
       processImageWithBackend(imageUrl)
     }
     reader.readAsDataURL(file)
   }, [])
 
-  // Process image with Flask backend
   const processImageWithBackend = async (imageUrl: string) => {
     setIsProcessing(true)
     setProcessingProgress(0)
     setApiError(null)
 
-    // Simulate progress updates
     const progressInterval = setInterval(() => {
       setProcessingProgress((prev) => {
         const newProgress = prev + Math.random() * 15
@@ -68,14 +71,11 @@ export function MainContent() {
     }, 300)
 
     try {
-      // Get model settings from sidebar (in a real app, you'd use context or props)
-      // For now, we'll use default values
       const modelType = "yolo11m-full-leaf"
       const detectionType = "disease"
       const confidence = 50
       const overlap = 50
 
-      // Send request to Flask backend
       const response = await fetch("http://localhost:5000/api/detect", {
         method: "POST",
         headers: {
@@ -97,11 +97,8 @@ export function MainContent() {
 
       const data = await response.json()
 
-      // Complete progress
       clearInterval(progressInterval)
       setProcessingProgress(100)
-
-      // Update UI with results
       setProcessedImage(data.processedImage)
       setDetectionResults(data.detections)
     } catch (error) {
@@ -113,7 +110,6 @@ export function MainContent() {
     }
   }
 
-  // Handle file drop
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
@@ -126,7 +122,6 @@ export function MainContent() {
     [handleFileSelect],
   )
 
-  // Handle file input change
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
@@ -136,7 +131,6 @@ export function MainContent() {
     [handleFileSelect],
   )
 
-  // Trigger file input click
   const triggerFileInput = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click()
@@ -277,15 +271,16 @@ export function MainContent() {
               </div>
             )}
 
-            {originalImage && (
+{originalImage && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-3 bg-white">
                   <h3 className="font-medium">Original Image</h3>
                   <div className="relative w-full aspect-square rounded-md overflow-hidden bg-gray-100">
-                    <img
+                    <Image
                       src={originalImage || "/placeholder.svg"}
                       alt="Original coffee leaf"
-                      className="w-full h-full object-contain"
+                      fill
+                      className="object-contain"
                     />
                   </div>
                 </div>
@@ -294,10 +289,11 @@ export function MainContent() {
                   <h3 className="font-medium">Detection Results</h3>
                   <div className="relative w-full aspect-square rounded-md overflow-hidden bg-gray-100">
                     {processedImage ? (
-                      <img
+                      <Image
                         src={processedImage || "/placeholder.svg"}
                         alt="Processed coffee leaf"
-                        className="w-full h-full object-contain"
+                        fill
+                        className="object-contain"
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full">
