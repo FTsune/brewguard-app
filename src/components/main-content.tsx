@@ -4,7 +4,7 @@ import type React from "react"
 import Image from "next/image"
 
 import { useState, useRef, useCallback } from "react"
-import { Upload, ImageIcon, AlertCircle, Leaf, CheckCircle2, Loader2, FileWarning } from "lucide-react"
+import { Upload, ImageIcon, AlertCircle, Leaf, CheckCircle2, Loader2, FileWarning, RefreshCw } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,13 +28,18 @@ export function MainContent() {
   const [detectionResults, setDetectionResults] = useState<DetectionResult[] | null>(null)
   const [processingProgress, setProcessingProgress] = useState(0)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
+  const [isRetrying, setIsRetrying] = useState(false)
+  const [compressedImageSize, setCompressedImageSize] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const currentImageRef = useRef<string | null>(null)
 
   // Handle file selection
   const handleFileSelect = useCallback((file: File) => {
     setUploadError(null)
     setApiError(null)
+    setRetryCount(0)
 
     if (!file.type.match("image/jpeg") && !file.type.match("image/png")) {
       setUploadError("Please upload a JPG or PNG image")
@@ -52,23 +57,92 @@ export function MainContent() {
       setOriginalImage(imageUrl)
       setProcessedImage(null)
       setDetectionResults(null)
+      currentImageRef.current = imageUrl
 
-      processImageWithBackend(imageUrl)
+      // Compress the image before sending
+      compressImage(imageUrl).then((compressedImage) => {
+        processImageWithBackend(compressedImage)
+      })
     }
     reader.readAsDataURL(file)
+  }, [])
+
+  // Compress image to reduce size
+  const compressImage = async (imageUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      // Create an HTML Image element
+      const img = document.createElement("img")
+
+      img.onload = () => {
+        // Calculate new dimensions (max 800px width/height while maintaining aspect ratio)
+        const MAX_SIZE = 800
+        let width = img.width
+        let height = img.height
+
+        if (width > height && width > MAX_SIZE) {
+          height = Math.round((height * MAX_SIZE) / width)
+          width = MAX_SIZE
+        } else if (height > MAX_SIZE) {
+          width = Math.round((width * MAX_SIZE) / height)
+          height = MAX_SIZE
+        }
+
+        // Create canvas and draw image with new dimensions
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        ctx?.drawImage(img, 0, 0, width, height)
+
+        // Get compressed image as base64 string (0.8 quality)
+        const compressedImage = canvas.toDataURL("image/jpeg", 0.8)
+
+        // Calculate and display size reduction
+        const originalSize = Math.round((imageUrl.length * 0.75) / 1024)
+        const compressedSize = Math.round((compressedImage.length * 0.75) / 1024)
+        setCompressedImageSize(`${compressedSize}KB (reduced from ${originalSize}KB)`)
+
+        resolve(compressedImage)
+      }
+
+      // Set crossOrigin to avoid CORS issues with canvas
+      img.crossOrigin = "anonymous"
+      img.src = imageUrl
+    })
+  }
+
+  // Retry mechanism for processing
+  const retryProcessing = useCallback(() => {
+    if (!currentImageRef.current) return
+
+    setIsRetrying(true)
+    setApiError(null)
+
+    // Compress and retry
+    compressImage(currentImageRef.current).then((compressedImage) => {
+      processImageWithBackend(compressedImage)
+    })
   }, [])
 
   const processImageWithBackend = async (imageUrl: string) => {
     setIsProcessing(true)
     setProcessingProgress(0)
     setApiError(null)
+    setIsRetrying(false)
+
+    // Increment retry count if we're retrying
+    if (isRetrying) {
+      setRetryCount((prev) => prev + 1)
+    }
 
     const progressInterval = setInterval(() => {
       setProcessingProgress((prev) => {
-        const newProgress = prev + Math.random() * 15
+        // Slow down progress as we approach 95% to account for longer processing time
+        const increment = prev < 50 ? Math.random() * 15 : Math.random() * 5
+        const newProgress = prev + increment
         return newProgress >= 95 ? 95 : newProgress
       })
-    }, 300)
+    }, 500)
 
     try {
       const modelType = "yolo11m-full-leaf"
@@ -76,8 +150,11 @@ export function MainContent() {
       const confidence = 50
       const overlap = 50
 
-      // Log the request for debugging
-      console.log("Sending request to /api/detect")
+      console.log("Sending request to /api/detect (attempt #" + (retryCount + 1) + ")")
+
+      // Use AbortController to implement timeout
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
 
       const response = await fetch("/api/detect", {
         method: "POST",
@@ -91,24 +168,24 @@ export function MainContent() {
           confidence,
           overlap,
         }),
-      })
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId))
 
-      // Log the response status and headers for debugging
       console.log("Response status:", response.status)
-      console.log("Response headers:", Object.fromEntries(response.headers.entries()))
 
-      // Check if the response is JSON
-      const contentType = response.headers.get("content-type")
-      if (!contentType || !contentType.includes("application/json")) {
-        // If not JSON, get the text and show it in the error
-        const text = await response.text()
-        console.error("Non-JSON response:", text.substring(0, 500)) // Log first 500 chars
-        throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`)
+      // Check for timeout or non-JSON response
+      if (response.status === 504) {
+        throw new Error("Server timeout. The model may be initializing or the image is too complex to process quickly.")
       }
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to process image")
+        const contentType = response.headers.get("content-type")
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Failed to process image")
+        } else {
+          throw new Error(`Server error: ${response.status} ${response.statusText}`)
+        }
       }
 
       const data = await response.json()
@@ -119,7 +196,14 @@ export function MainContent() {
       setDetectionResults(data.detections)
     } catch (error) {
       clearInterval(progressInterval)
-      setApiError(error instanceof Error ? error.message : "An unknown error occurred")
+
+      // Handle AbortController timeout
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setApiError("Request timed out. The server may be busy or initializing.")
+      } else {
+        setApiError(error instanceof Error ? error.message : "An unknown error occurred")
+      }
+
       console.error("Error processing image:", error)
     } finally {
       setIsProcessing(false)
@@ -215,12 +299,36 @@ export function MainContent() {
             )}
 
             {apiError && (
-              <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 p-3 rounded-md border border-red-100">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <div>
-                  <p className="font-medium">Backend Error</p>
-                  <p>{apiError}</p>
+              <div className="flex flex-col gap-3 text-sm text-red-600 bg-red-50 p-4 rounded-md border border-red-100">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Backend Error</p>
+                    <p>{apiError}</p>
+                    {apiError.includes("timeout") && (
+                      <p className="mt-1 text-xs">
+                        The server might be initializing or under heavy load. This is common with ML models on free-tier
+                        hosting.
+                      </p>
+                    )}
+                  </div>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start border-red-200 text-red-600 hover:bg-red-50"
+                  onClick={retryProcessing}
+                  disabled={isProcessing}
+                >
+                  <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                  Retry with Smaller Image
+                </Button>
+              </div>
+            )}
+
+            {compressedImageSize && originalImage && (
+              <div className="text-xs text-muted-foreground">
+                Image compressed to {compressedImageSize} for faster processing
               </div>
             )}
 
@@ -280,10 +388,15 @@ export function MainContent() {
             {isProcessing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Processing image...</span>
+                  <span>{processingProgress < 90 ? "Processing image..." : "Waiting for model response..."}</span>
                   <span>{Math.round(processingProgress)}%</span>
                 </div>
                 <Progress value={processingProgress} className="h-2" />
+                {processingProgress >= 90 && (
+                  <p className="text-xs text-amber-600">
+                    ML models may take longer on first run as they initialize. Please be patient.
+                  </p>
+                )}
               </div>
             )}
 
