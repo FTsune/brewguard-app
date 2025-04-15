@@ -76,6 +76,9 @@ export function MainContent() {
       const confidence = 50
       const overlap = 50
 
+      // Log the request for debugging
+      console.log("Sending request to /api/detect")
+
       const response = await fetch("/api/detect", {
         method: "POST",
         headers: {
@@ -89,6 +92,19 @@ export function MainContent() {
           overlap,
         }),
       })
+
+      // Log the response status and headers for debugging
+      console.log("Response status:", response.status)
+      console.log("Response headers:", Object.fromEntries(response.headers.entries()))
+
+      // Check if the response is JSON
+      const contentType = response.headers.get("content-type")
+      if (!contentType || !contentType.includes("application/json")) {
+        // If not JSON, get the text and show it in the error
+        const text = await response.text()
+        console.error("Non-JSON response:", text.substring(0, 500)) // Log first 500 chars
+        throw new Error(`Server returned non-JSON response: ${response.status} ${response.statusText}`)
+      }
 
       if (!response.ok) {
         const errorData = await response.json()
