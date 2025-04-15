@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: true,
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "https://brewguard.onrender.com/:path*", // Proxy to your Flask backend
+      },
+    ];
+  },
 };
 
 export default nextConfig;
