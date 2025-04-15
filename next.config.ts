@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -6,10 +6,10 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "https://brewguard.onrender.com/:path*", // Proxy to your Flask backend
+        destination: "https://brewguard.onrender.com/api/:path*", // Fixed path to include /api/
       },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

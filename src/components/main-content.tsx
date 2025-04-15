@@ -76,7 +76,7 @@ export function MainContent() {
       const confidence = 50
       const overlap = 50
 
-      const response = await fetch("http://localhost:5000/api/detect", {
+      const response = await fetch("/api/detect", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -271,7 +271,7 @@ export function MainContent() {
               </div>
             )}
 
-{originalImage && (
+            {originalImage && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-3 bg-white">
                   <h3 className="font-medium">Original Image</h3>
