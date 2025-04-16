@@ -1,27 +1,91 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronDown, Settings, Database, ChevronLeft, ChevronRight } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ChevronDown, Settings, Database, ChevronLeft, ChevronRight, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
-export function Sidebar() {
+interface SidebarProps {
+  isMobileOpen: boolean
+  setIsMobileOpen: (open: boolean) => void
+}
+
+export function Sidebar({ isMobileOpen, setIsMobileOpen }: SidebarProps) {
   const [modelType, setModelType] = useState("yolo11m-full-leaf")
   const [detectionType, setDetectionType] = useState("disease")
   const [confidence, setConfidence] = useState([50])
   const [overlap, setOverlap] = useState([50])
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Check if we're on mobile
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+      if (window.innerWidth < 768) {
+        setIsCollapsed(true)
+      }
+    }
+
+    // Initial check
+    checkIfMobile()
+
+    // Add event listener
+    window.addEventListener("resize", checkIfMobile)
+
+    // Cleanup
+    return () => window.removeEventListener("resize", checkIfMobile)
+  }, [])
+
+  // Close sidebar when clicking outside on mobile
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isMobile && isMobileOpen) {
+        // Check if click is outside sidebar
+        const sidebar = document.getElementById("sidebar")
+        if (sidebar && !sidebar.contains(e.target as Node)) {
+          setIsMobileOpen(false)
+        }
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [isMobile, isMobileOpen, setIsMobileOpen])
 
   return (
-    <div className="relative flex h-full">
+    <div className="relative h-full">
+      {/* Mobile overlay */}
+      {isMobile && isMobileOpen && (
+        <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setIsMobileOpen(false)} />
+      )}
+
+      {/* Sidebar */}
       <div
-        className={`transition-all duration-300 ease-in-out ${
-          isCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-80 opacity-100"
-        } border-r bg-gray-50/50 flex flex-col h-full`}
+        id="sidebar"
+        className={`
+          ${
+            isMobile
+              ? `fixed left-0 top-0 bottom-0 z-50 ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} bg-white`
+              : `relative ${isCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-80 opacity-100"} bg-gray-50/50`
+          }
+          transition-all duration-300 ease-in-out border-r flex flex-col h-full
+        `}
       >
+        {/* Mobile close button */}
+        {isMobile && (
+          <button
+            onClick={() => setIsMobileOpen(false)}
+            className="absolute top-4 right-4 p-1 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors"
+            aria-label="Close sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+
         <div className="p-6 flex flex-col gap-6 overflow-auto h-full">
           <Collapsible defaultOpen className="space-y-2">
             <CollapsibleTrigger asChild>
@@ -128,14 +192,16 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Collapse/Expand Toggle Button */}
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-4 top-6 bg-white border border-gray-200 rounded-full p-1.5 shadow-md z-10 hover:bg-teal hover:text-white transition-colors"
-        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </button>
+      {/* Desktop Collapse/Expand Toggle Button */}
+      {!isMobile && (
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-4 top-6 bg-white border border-gray-200 rounded-full p-1.5 shadow-md z-10 hover:bg-teal hover:text-white transition-colors"
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   )
 }
